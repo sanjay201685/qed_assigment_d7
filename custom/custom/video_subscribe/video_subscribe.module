@@ -1,0 +1,167 @@
+<?php
+
+/**
+ * Implements hook_menu().
+ */
+function video_subscribe_menu() {
+  $ietms = array();
+
+  $ietms['subscription_list'] = array(
+    'title' => t('Video Subscription list'),
+    'page callback' => 'video_subscribe_list',
+    'type' => MENU_CALLBACK,
+    'access arguments' => array('access content'),
+  );
+
+  $ietms['videos/%'] = array(
+    'title' => t('Videos list'),
+    'page callback' => 'video_subscribe_video',
+    'page arguments' => array(1),
+    'type' => MENU_CALLBACK,
+    'access arguments' => array('access content'),
+  );
+
+  $ietms['subscription_update_table/%'] = array(
+    'title' => t('Video Subscription list'),
+    'page callback' => 'video_subscribe_update_table',
+    'page arguments' => array(1),
+    'type' => MENU_CALLBACK,
+    'access callback' => 'video_subscribe_check_user',
+  );
+
+
+  return $ietms;
+}
+
+/**
+ * Update custom table when user subscribe for video.
+ */
+function video_subscribe_update_table($nid) {
+  if (user_is_logged_in()) {
+    global $user;
+
+	$data = array(
+	  'uid' => $user->uid,
+	  'sid' => $nid,
+	  'date_time' => REQUEST_TIME,
+	);
+
+	// Insert or update data in table.
+	drupal_write_record('video_subscribe', $data);  
+
+  	drupal_json_output(t('Subscribe Successfully.'));
+    drupal_exit();
+  }
+  else {
+    drupal_json_output(t('Currently you are not logged in or some technical problem try again later.'));
+    drupal_exit();	
+  }
+}
+
+/**
+ * Checking current user logged in or not.
+ */
+function video_subscribe_check_user() {
+  if (user_is_logged_in()) {
+  	return TRUE;
+  }
+  else {
+    return FALSE;	
+  }
+}
+
+
+/**
+ * List video subscribe list.
+ */
+function video_subscribe_list() {
+  global $user;
+
+  // Adding custom js.
+  drupal_add_js(drupal_get_path('module', 'video_subscribe') . '/js/video_subscribe.js');
+
+  $subs_list = db_select('node', 'n');
+  $subs_list->leftJoin('field_data_body', 'b', 'n.nid = b.entity_id');
+  $subs_list->fields('n', array('nid', 'title'));
+  $subs_list->fields('b', array('body_value'));
+  $subs_list->condition('n.type', 'video_subscription');
+  $result = $subs_list->execute()->fetchAll();
+
+  $vsl = db_select('video_subscribe', 's');
+  $vsl->fields('s', array('sid'));
+  $vsl->condition('s.uid', $user->uid, '=');
+  $vsl_result = $vsl->execute()->fetchAll();
+  
+  $subs_id = array();
+  foreach ($vsl_result as $key => $value) {
+  	$subs_id[] = $vsl_result[$key]->sid;
+  }
+
+  $theme = theme('video_subscribe_list', array('node' => $result, 'vsl_result' => $subs_id));
+  return $theme;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function video_subscribe_theme($existing, $type, $theme, $path) {
+  return array(
+  	'video_subscribe_list' => array(
+  	  'variables' => array('node' => NULL, 'vsl_result' => NULL),
+  	  'template' => 'video-subscribe-list',
+  	  'path' => drupal_get_path('module', 'video_subscribe') . '/templates', 
+  	),
+  	'video_list' => array(
+  	  'variables' => array('videos_list' => NULL),
+  	  'template' => 'videos-list',
+  	  'path' => drupal_get_path('module', 'video_subscribe') . '/templates', 
+  	),
+  );
+}
+
+/**
+ * Get video list user subscribed.
+ */
+function video_subscribe_video($sid) {
+  global $user;
+
+  // Get user subscribe date.
+  $vsl = db_select('video_subscribe', 's');
+  $vsl->fields('s', array('date_time'));
+  $vsl->condition('s.uid', $user->uid);
+  $vsl->condition('s.sid', $sid);
+  $vsl_result = $vsl->execute()->fetchAll();
+  $sdate = $vsl_result[0]->date_time;
+
+  // Subscribe date.	
+  $dt1 = date('m/d/Y', $sdate);
+  // Current date.
+  $dt2 = date('m/d/Y', strtotime('now'));
+
+  // Get no of weeks between two dates.
+  $weeks = video_subscribe_get_week($dt1, $dt2) + 1;
+  
+  $subs_list = db_select('node', 'n');
+  $subs_list->leftJoin('field_data_field_video_sid', 'vs', 'n.nid = vs.entity_id');
+  $subs_list->fields('n', array('nid', 'title'));
+  $subs_list->condition('vs.field_video_sid_target_id', $sid);
+  $subs_list->condition('n.type', array('video_subscription', 'video_series'), 'IN');
+  $subs_list->range(0, $weeks);
+  $result = $subs_list->execute()->fetchAll();
+  
+  $theme = theme('video_list', array('videos_list' => $result));
+  return $theme;
+}
+
+/**
+ * Get no of weeks from date of subscribed.
+ */
+function video_subscribe_get_week($date1, $date2) {
+  $first = DateTime::createFromFormat('m/d/Y', $date1);
+  $second = DateTime::createFromFormat('m/d/Y', $date2);
+  
+  if($date1 > $date2) 
+  	return week_between_two_dates($date2, $date1);
+  
+  return floor($first->diff($second)->days/7);
+}

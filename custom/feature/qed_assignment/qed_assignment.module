@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the qed assignment feature.
+ */
+
+include_once 'qed_assignment.features.inc';

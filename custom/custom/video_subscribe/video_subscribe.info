@@ -1,0 +1,4 @@
+name = Subscribe video list
+description = 'List all the video subscribe by current user.'
+core = 7.x
+package = custom
